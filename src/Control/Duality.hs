@@ -114,7 +114,14 @@ instance (Functor h, Bifunctor t) => Bifunctor (ComposeT h t) where
 instance (Dual h h', Bidual t t') => Bidual (ComposeT h t) (ComposeT h' t') where
   bizap n n' (ComposeT a) (ComposeT b) = zap (bizap n n') a b
 
+-- newtype ComposeS h t (f :: * -> *) (g :: * -> *) a = ComposeS (t f g (h a))
+
+-- instance (Functor h, Bifunctor t) => Bifunctor (ComposeS h t) where
+--   bimap n n' (ComposeS h) = ComposeS (bimap n n' h)
+
+-- instance (Dual h h', Bidual t t') => Bidual (ComposeS h t) (ComposeS h' t') where
 -- Now this is weird...
+
 newtype FixT t a = FixT (t (FixT t) a)
 
 instance (forall f. Functor f => Functor (t f)) => Functor (FixT t) where
@@ -164,10 +171,3 @@ instance Functor f => Comonad (CoFree f) where
   extend f c@(CoFree _ as) = CoFree (f c) (fmap (extend f) as) 
   duplicate c@(CoFree _ as) = CoFree c (fmap duplicate as)
   extract (CoFree a _) = a
-
--- newtype ComposeS h t (f :: * -> *) (g :: * -> *) a = ComposeS (t f g (h a))
-
--- instance (Functor h, Bifunctor t) => Bifunctor (ComposeS h t) where
---   bimap n n' (ComposeS h) = ComposeS (bimap n n' h)
-
--- instance (Dual h h', Bidual t t') => Bidual (ComposeS h t) (ComposeS h' t') where
