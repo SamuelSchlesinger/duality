@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs #-}
 module Control.Duality where
 
+import Control.Monad
 import Data.Functor.Identity
 import Data.Functor.Compose
 
@@ -183,26 +184,30 @@ instance (Comonad w, Monad m, Dual w m) => Dual (Codensity m) (Density w)
 --
 -- Let's do it!
 
-type Conversation   = ((,) String) + ((->) String)
+type Conversation a = ((,) a) + ((->) a)
 
-speak :: String -> Free Conversation a -> Free Conversation a
+speak :: b -> Free (Conversation b) a -> Free (Conversation b) a
 speak str = Free . L . ((,) str)
 
-listen :: (String -> Free Conversation a) -> Free Conversation a
+listen :: (b -> Free (Conversation b) a) -> Free (Conversation b) a
 listen = Free . R
 
-discussion :: Free Conversation String
-discussion = listen \x -> if x == "5" then speak "aha! 5" (pure "goodbye")
-                                      else discussion
+discussion :: Free (Conversation (Int, Int)) String
+discussion = listen 
+  \(x, y) -> if min x y < 10 
+          then speak (4,333333333) discussion
+          else return "success!"
 
-codiscussion :: Int -> Co (Free Conversation) Int
-codiscussion n = CoFree n (P (\str -> codiscussion n) (show n, codiscussion (n + 1)))
+coordinates :: (Int, Int) -> Co (Free (Conversation (Int, Int))) (Int, Int)
+coordinates (n, m) = CoFree (n, m) (P (\str -> coordinates (n + 1, m)) ((n, m), coordinates (n, m + 1)))
 
--- outputs ("goodbye", 6)
--- this means that in the 6th evaluation step, the program terminated and
--- the string that was returned was goodbye..
-test :: (String, Int)
-test = zap (,) discussion (codiscussion 0)
+-- Here, we output the "coordinates" I got to in my discussion... Notice
+-- that I can feed different contexts into my contextual computation, these
+-- contexts themselves giving back some summary of what went on,
+-- positionally.
+
+test :: (Int, Int)
+test = zap (flip const) discussion (coordinates (0, 0))
 
 -- you can record the input to all of your free monadic combinators, roll
 -- it up into a cofree monad, and replay history in a pure way to figure
