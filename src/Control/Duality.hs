@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE GADTs #-}
 module Control.Duality where
@@ -154,6 +155,35 @@ instance (Comonad w, Monad m, Dual w m) => Dual (Density w) (Codensity m) where
   zap z (Density x g) (Codensity y) = zap z (extend x g) (y return)
 
 instance (Comonad w, Monad m, Dual w m) => Dual (Codensity m) (Density w) 
+
+-- Summary:
+--
+-- So now, I can write a free monad, a dual cofree comonadic context in which 
+-- it will run, take the codensity/density transforms of each, and let the
+-- computer do its thing.
+--
+-- Let's do it!
+
+type Conversation   = ((,) String) + ((->) String)
+
+type CoConversation = ((->) String) & ((,) String) 
+
+speak :: String -> Free Conversation a -> Free Conversation a
+speak str = Free . L . ((,) str)
+
+listen :: (String -> Free Conversation a) -> Free Conversation a
+listen = Free . R
+
+discussion :: Free Conversation String
+discussion = listen \x -> if x == "5" then speak "aha! 5" $ do
+                                        listen \x -> speak "goodbye..." (pure "goodbye")
+                                      else discussion
+
+codiscussion :: Int -> CoFree CoConversation Int
+codiscussion n = CoFree n (P (\str -> codiscussion (n + 1)) (show n, codiscussion (n + 1)))
+
+test :: (String, Int)
+test = zap (,) discussion $ codiscussion 0
 
 -- Things lieth beneath which are grokkable elsewhere
 --------------------------------------------------------------------------------
