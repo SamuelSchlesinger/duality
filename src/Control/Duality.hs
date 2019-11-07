@@ -35,9 +35,8 @@ class (Functor f, Functor g) => Dual f g where
 
 -- These are not firing >:-(
 {-# RULES
-"zap/fmap/both"  [0] forall f g a b z. zap z (fmap f a) (fmap g b) = zap (\a' b' -> z (f a') (g b')) a b 
-"zap/fmap/left"  [1] forall f a b z.   zap z (fmap f a)         b  = zap (\a' b' -> z (f a') b') a b
-"zap/fmap/right" [1] forall g a b z.   zap z         a  (fmap g b) = zap (\a' b' -> z a' (g b')) a b
+"zap/fmap/left"  [0] forall f a b z.   zap z (fmap f a)         b  = zap (\a' b' -> z (f a') b') a b
+"zap/fmap/right" [0] forall g a b z.   zap z         a  (fmap g b) = zap (\a' b' -> z a' (g b')) a b
   #-}
     
 type instance Co Identity = Identity
@@ -244,7 +243,7 @@ coordinates (n, m) = CoFree (n, m) (P (\str -> coordinates (n + 1, m)) ((n, m), 
 -- positionally.
 
 test :: (Int, Int)
-test = zap (flip const) (fmap (\x -> x ++ "Hello") discussion) (fmap (\(n, m) -> (n - 1, m - 1)) (coordinates (0, 0)))
+test = zap (flip const) (fmap (\x -> x ++ "!!!!!") discussion) (fmap (\(n, m) -> (n - 1, m - 1)) (coordinates (1, 1)))
 
 -- you can record the input to all of your free monadic combinators, roll
 -- it up into a cofree monad, and replay history in a pure way to figure
