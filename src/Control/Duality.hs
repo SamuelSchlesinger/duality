@@ -1,3 +1,5 @@
+{-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE GADTs #-}
 module Control.Duality where
 
 import Data.Functor.Identity
@@ -136,6 +138,22 @@ instance (forall f f'. Dual f f' => Dual (t f) (t' f')
         , forall f. Functor f => Functor (t' f)
         , forall f. Functor f => Functor (t f) ) => Dual (FixT t) (FixT t') where
   zap z (FixT a) (FixT b) = zap z a b
+
+newtype Codensity m a = Codensity (forall b. (a -> m b) -> m b)
+
+instance Functor (Codensity m) where
+  fmap f (Codensity g) = Codensity \c -> g (c . f)
+
+data Density m a where 
+  Density :: (m b -> a) -> (m b) -> Density m a
+
+instance Functor (Density m) where
+  fmap f (Density g b) = Density (f . g) b
+
+instance (Comonad w, Monad m, Dual w m) => Dual (Density w) (Codensity m) where
+  zap z (Density x g) (Codensity y) = zap z (extend x g) (y return)
+
+instance (Comonad w, Monad m, Dual w m) => Dual (Codensity m) (Density w) 
 
 -- Things lieth beneath which are grokkable elsewhere
 --------------------------------------------------------------------------------
