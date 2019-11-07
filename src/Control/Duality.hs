@@ -1,3 +1,5 @@
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE GADTs #-}
@@ -13,6 +15,8 @@ import Data.Functor.Compose
 -- I strongly recommend you go read it, as it is an exposition of the ideas
 -- that I am trying to understand in code.
 
+type family Co (f :: k1) :: k2
+
 class (Functor f, Functor g) => Dual f g where
   zap :: (a -> b -> c) -> f a -> g b -> c
   default zap :: Dual g f => (a -> b -> c) -> f a -> g b -> c
@@ -21,15 +25,21 @@ class (Functor f, Functor g) => Dual f g where
 instance Dual Identity Identity where
   zap z (Identity a) (Identity b) = z a b
 
+type instance Co Identity = Identity
+
+type instance Co ((->) a) = ((,) a)
 instance Dual ((->) a) ((,) a) where
   zap z f (a, b) = z (f a) b
 
+type instance Co ((,) a) = ((->) a)
 instance Dual ((,) x) ((->) x)
 
+type instance Co (Free f) = CoFree (Co f)
 instance Dual f g => Dual (Free f) (CoFree g) where
   zap z (Pure a) (CoFree b bs) = z a b
   zap z (Free a) (CoFree b bs) = zap (zap z) a bs
 
+type instance Co (CoFree f) = Free
 instance Dual g f => Dual (CoFree f) (Free g)
 
 data (f + g) x = L (f x) | R (g x)
@@ -43,12 +53,15 @@ data (f & g) x = P (f x) (g x)
 instance (Functor f, Functor g) => Functor (f & g) where
   fmap f (P a b) = P (fmap f a) (fmap f b)
 
+type instance Co (f + f') = Co f & Co f'
 instance (Dual f g, Dual f' g') => Dual (f + f') (g & g') where
   zap z (L x) (P a b) = zap z x a
   zap z (R x) (P a b) = zap z x b
 
+type instance Co (f & f') = Co f + Co f'
 instance (Dual f g, Dual f' g') => Dual (g & g') (f + f')
 
+type instance Co (Compose f f') = Compose (Co f) (Co f')
 instance (Dual f g, Dual f' g', Functor f, Functor f', Functor g, Functor g') => Dual (Compose f f') (Compose g g') where
   zap z (Compose f) (Compose g) = zap (zap z) f g
 
@@ -103,10 +116,12 @@ class (Bifunctor t, Bifunctor s) => Bidual t s where
     -> h a
   bizap n m = flip (bizap (flip n) (flip m))
 
+type instance Co (+) = (&)
 instance Bidual (+) (&) where
   bizap n _  (L a) (P b _) = (n  a) b
   bizap _ n' (R a) (P _ b) = (n' a) b
 
+type instance Co (&) = (+) 
 instance Bidual (&) (+)
 
 newtype ComposeT h t (f :: * -> *) (g :: * -> *) a = ComposeT (h (t f g a))
@@ -114,6 +129,7 @@ newtype ComposeT h t (f :: * -> *) (g :: * -> *) a = ComposeT (h (t f g a))
 instance (Functor h, Bifunctor t) => Bifunctor (ComposeT h t) where
   bimap n n' (ComposeT h) = ComposeT (fmap (bimap n n') h)
 
+type instance Co (ComposeT h t) = ComposeT (Co h) (Co t)
 instance (Dual h h', Bidual t t') => Bidual (ComposeT h t) (ComposeT h' t') where
   bizap n n' (ComposeT a) (ComposeT b) = zap (bizap n n') a b
 
@@ -135,6 +151,7 @@ type Machine m a b = FixT (ComposeT ((->) a) (&) m) b
 example :: Machine IO Int ()
 example = FixT . ComposeT $ \n -> P (print n) example
 
+type instance Co (FixT f) = Co (FixT (Co f)) 
 instance (forall f f'. Dual f f' => Dual (t f) (t' f') 
         , forall f. Functor f => Functor (t' f)
         , forall f. Functor f => Functor (t f) ) => Dual (FixT t) (FixT t') where
@@ -151,9 +168,11 @@ data Density m a where
 instance Functor (Density m) where
   fmap f (Density g b) = Density (f . g) b
 
+type instance Co Density = Codensity
 instance (Comonad w, Monad m, Dual w m) => Dual (Density w) (Codensity m) where
   zap z (Density x g) (Codensity y) = zap z (extend x g) (y return)
 
+type instance Co Codensity = Density
 instance (Comonad w, Monad m, Dual w m) => Dual (Codensity m) (Density w) 
 
 -- Summary:
@@ -166,8 +185,6 @@ instance (Comonad w, Monad m, Dual w m) => Dual (Codensity m) (Density w)
 
 type Conversation   = ((,) String) + ((->) String)
 
-type CoConversation = ((->) String) & ((,) String) 
-
 speak :: String -> Free Conversation a -> Free Conversation a
 speak str = Free . L . ((,) str)
 
@@ -175,15 +192,21 @@ listen :: (String -> Free Conversation a) -> Free Conversation a
 listen = Free . R
 
 discussion :: Free Conversation String
-discussion = listen \x -> if x == "5" then speak "aha! 5" $ do
-                                        listen \x -> speak "goodbye..." (pure "goodbye")
+discussion = listen \x -> if x == "5" then speak "aha! 5" (pure "goodbye")
                                       else discussion
 
-codiscussion :: Int -> CoFree CoConversation Int
-codiscussion n = CoFree n (P (\str -> codiscussion (n + 1)) (show n, codiscussion (n + 1)))
+codiscussion :: Int -> Co (Free Conversation) Int
+codiscussion n = CoFree n (P (\str -> codiscussion n) (show n, codiscussion (n + 1)))
 
+-- outputs ("goodbye", 6)
+-- this means that in the 6th evaluation step, the program terminated and
+-- the string that was returned was goodbye..
 test :: (String, Int)
-test = zap (,) discussion $ codiscussion 0
+test = zap (,) discussion (codiscussion 0)
+
+-- you can record the input to all of your free monadic combinators, roll
+-- it up into a cofree monad, and replay history in a pure way to figure
+-- stuff out...
 
 -- Things lieth beneath which are grokkable elsewhere
 --------------------------------------------------------------------------------
