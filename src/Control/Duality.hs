@@ -1,3 +1,9 @@
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DeriveFunctor #-}
@@ -8,6 +14,7 @@ module Control.Duality where
 import Control.Monad
 import Data.Functor.Identity
 import Data.Functor.Compose
+import Data.Type.Equality
 
 -- Inspired by this post by Ed Kmett
 --------------------------------------------------------------------------------
@@ -16,17 +23,26 @@ import Data.Functor.Compose
 -- I strongly recommend you go read it, as it is an exposition of the ideas
 -- that I am trying to understand in code.
 
-type family Co (f :: k1) :: k2
+type family Co (f :: k) :: k
 
+-- The notion of functorial duality. Laws might include
+-- zap z = flip zap (flip z)
+-- zap z (fmap f a) (fmap g b) = zap (\a' b' -> z (f a') (g b')) a b
 class (Functor f, Functor g) => Dual f g where
   zap :: (a -> b -> c) -> f a -> g b -> c
   default zap :: Dual g f => (a -> b -> c) -> f a -> g b -> c
   zap z = flip (zap (flip z))
 
+-- These are not firing >:-(
+{-# RULES
+"zap/fmap/both"  [0] forall f g a b z. zap z (fmap f a) (fmap g b) = zap (\a' b' -> z (f a') (g b')) a b 
+"zap/fmap/left"  [1] forall f a b z.   zap z (fmap f a)         b  = zap (\a' b' -> z (f a') b') a b
+"zap/fmap/right" [1] forall g a b z.   zap z         a  (fmap g b) = zap (\a' b' -> z a' (g b')) a b
+  #-}
+    
+type instance Co Identity = Identity
 instance Dual Identity Identity where
   zap z (Identity a) (Identity b) = z a b
-
-type instance Co Identity = Identity
 
 type instance Co ((->) a) = ((,) a)
 instance Dual ((->) a) ((,) a) where
@@ -43,12 +59,14 @@ instance Dual f g => Dual (Free f) (CoFree g) where
 type instance Co (CoFree f) = Free (Co f)
 instance Dual g f => Dual (CoFree f) (Free g)
 
+-- A coproduct in the category of functors.
 data (f + g) x = L (f x) | R (g x)
 
 instance (Functor f, Functor g) => Functor (f + g) where
   fmap f (L x) = L (fmap f x)
   fmap f (R x) = R (fmap f x)
 
+-- A product in the category of functors.
 data (f & g) x = P (f x) (g x)
 
 instance (Functor f, Functor g) => Functor (f & g) where
@@ -63,7 +81,7 @@ type instance Co (f & f') = Co f + Co f'
 instance (Dual f g, Dual f' g') => Dual (g & g') (f + f')
 
 type instance Co (Compose f f') = Compose (Co f) (Co f')
-instance (Dual f g, Dual f' g', Functor f, Functor f', Functor g, Functor g') => Dual (Compose f f') (Compose g g') where
+instance (Dual f g, Dual f' g') => Dual (Compose f f') (Compose g g') where
   zap z (Compose f) (Compose g) = zap (zap z) f g
 
 type State   a = Compose ((->) a) ((,) a)
@@ -80,7 +98,8 @@ type CoWriter a = ((->) a)
 -- functors!
 
 -- Now we work in the category with functors as the objects and natural transformations
--- between functors as the arrows.
+-- between functors as the arrows. TODO define Functor for this category
+-- and the associated duality notion
 class (forall f g. (Functor f, Functor g) => Functor (t f g)) => Bifunctor t where
   bimap :: forall f f' g g' a. 
     ( Functor f
@@ -125,6 +144,8 @@ instance Bidual (+) (&) where
 type instance Co (&) = (+) 
 instance Bidual (&) (+)
 
+-- Composition of a functor in Hask with a bifunctor in the category of
+-- functors.
 newtype ComposeT h t (f :: * -> *) (g :: * -> *) a = ComposeT (h (t f g a))
 
 instance (Functor h, Bifunctor t, Functor f, Functor g) => Functor (ComposeT h t f g) where
@@ -137,6 +158,8 @@ type instance Co (ComposeT h t) = ComposeT (Co h) (Co t)
 instance (Dual h h', Bidual t t') => Bidual (ComposeT h t) (ComposeT h' t') where
   bizap n n' (ComposeT a) (ComposeT b) = zap (bizap n n') a b
 
+-- Composition of a bifunctor in the category of functors with a functor in
+-- Hask.
 newtype ComposeS h t (f :: * -> *) (g :: * -> *) a = ComposeS (t f g (h a))
 
 instance (Functor f, Functor g, Functor h, Bifunctor t) => Functor (ComposeS h t f g) where
@@ -221,7 +244,7 @@ coordinates (n, m) = CoFree (n, m) (P (\str -> coordinates (n + 1, m)) ((n, m), 
 -- positionally.
 
 test :: (Int, Int)
-test = zap (flip const) discussion (coordinates (0, 0))
+test = zap (flip const) (fmap (\x -> x ++ "Hello") discussion) (fmap (\(n, m) -> (n - 1, m - 1)) (coordinates (0, 0)))
 
 -- you can record the input to all of your free monadic combinators, roll
 -- it up into a cofree monad, and replay history in a pure way to figure
