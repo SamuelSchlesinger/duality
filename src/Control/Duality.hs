@@ -34,10 +34,10 @@ class (Functor f, Functor g) => Dual f g where
   zap z = flip (zap (flip z))
 
 -- These are not firing >:-(
-{-# RULES
+{- RULES
 "zap/fmap/left"  [0] forall f a b z.   zap z (fmap f a)         b  = zap (\a' b' -> z (f a') b') a b
 "zap/fmap/right" [0] forall g a b z.   zap z         a  (fmap g b) = zap (\a' b' -> z a' (g b')) a b
-  #-}
+  -}
     
 type instance Co Identity = Identity
 instance Dual Identity Identity where
@@ -49,6 +49,10 @@ instance Dual ((->) a) ((,) a) where
 
 type instance Co ((,) a) = ((->) a)
 instance Dual ((,) x) ((->) x)
+
+-- "free f a" monads are trees with branching factor f and as at the leaves
+-- "cofree (Co f) a" comonads are trees with branching factor f and as at
+-- every node 
 
 type instance Co (Free f) = CoFree (Co f)
 instance Dual f g => Dual (Free f) (CoFree g) where
@@ -137,8 +141,8 @@ class (Bifunctor t, Bifunctor s) => Bidual t s where
 
 type instance Co (+) = (&)
 instance Bidual (+) (&) where
-  bizap n _  (L a) (P b _) = (n  a) b
-  bizap _ n' (R a) (P _ b) = (n' a) b
+  bizap n _  (L a) (P b _) = n  a b
+  bizap _ n' (R a) (P _ b) = n' a b
 
 type instance Co (&) = (+) 
 instance Bidual (&) (+)
@@ -213,6 +217,13 @@ instance (Comonad w, Monad m, Dual w m) => Dual (Density w) (Codensity m) where
 type instance Co (Codensity m) = Density (Co m)
 instance (Comonad w, Monad m, Dual w m) => Dual (Codensity m) (Density w) 
 
+zapL :: Dual f g => (forall a. a -> b -> c) -> Colim f -> Lim g -> c
+zapL n (Colim a) (Lim b) = zap n a b
+
+data Colim f where Colim :: f a -> Colim f
+
+newtype Lim f = Lim (forall a. f a)
+
 -- Summary:
 --
 -- So now, I can write a free monad, a dual cofree comonadic context in which 
@@ -234,6 +245,8 @@ discussion = listen
           then speak (4,333333333) discussion
           else return "success!"
 
+type CoConversation a = ((->) a) & ((,) a)
+
 coordinates :: (Int, Int) -> Co (Free (Conversation (Int, Int))) (Int, Int)
 coordinates (n, m) = CoFree (n, m) (P (\str -> coordinates (n + 1, m)) ((n, m), coordinates (n, m + 1)))
 
@@ -244,6 +257,24 @@ coordinates (n, m) = CoFree (n, m) (P (\str -> coordinates (n + 1, m)) ((n, m), 
 
 test :: (Int, Int)
 test = zap (flip const) (fmap (\x -> x ++ "!!!!!") discussion) (fmap (\(n, m) -> (n - 1, m - 1)) (coordinates (1, 1)))
+
+type Teletype = Free (Conversation String)
+
+program :: Teletype Int
+program = go 1 where
+  go n | n `mod` 3 /= 0 = listen \x ->
+    if x == "end" then return n
+                  else go (n + 1)
+       | otherwise      = speak "up" $ go (n + 1)
+
+context :: Co Teletype Double
+context = go 1000 where
+  go :: Double -> Co Teletype Double
+  go n = CoFree (n ** 2) $ 
+    flip P (if n <= 1 then "end" else show n, go (n - 1))
+           \msg -> if msg == "up"        then go (n + 1)
+                   else if msg == "down" then go (n - 1)
+                   else                       go  n
 
 -- you can record the input to all of your free monadic combinators, roll
 -- it up into a cofree monad, and replay history in a pure way to figure
